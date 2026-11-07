@@ -1,0 +1,76 @@
+# Pip iOS（仅小米电视）— 未签名 IPA 构建
+# 参考 dsh-Go ios-remote-only 的踩坑经验：
+# - macos-15 arm64 经常抢不到 runner，改 macos-15-intel（iOS arm64 IPA 可交叉编译）
+# - 动态选最新的 Xcode 26（纯 SwiftUI，无需 Flutter，但保持与 dsh 同款选版逻辑）
+# - CODE_SIGNING_ALLOWED=NO 时 xcodebuild archive 只出 .xcarchive、不出 IPA，
+#   需手工把 .app 打包成 Payload/*.ipa
+name: Build unsigned IPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15-intel
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 26
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort | tail -n 1 || true)
+          if [ -n "$XCODE" ]; then
+            echo "Using $XCODE"
+            sudo xcode-select -s "$XCODE"
+          else
+            echo "No Xcode 26 found, keeping default: $(xcode-select -p)"
+          fi
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: Archive (no codesign)
+        run: |
+          xcodebuild -project app/Pip.xcodeproj \
+            -scheme Pip \
+            -configuration Release \
+            -archivePath build/Pip.xcarchive \
+            -destination 'generic/platform=iOS' \
+            archive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO
+
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p Payload
+          cp -R "build/Pip.xcarchive/Products/Applications/Pip.app" Payload/
+          ditto -c -k --sequesterRsrc --keepParent Payload pip-xiaomi-unsigned.ipa
+          ls -lh pip-xiaomi-unsigned.ipa
+          unzip -l pip-xiaomi-unsigned.ipa
+
+      - name: Verify IPA (static only)
+        run: |
+          rm -rf /tmp/pip-verify && mkdir -p /tmp/pip-verify
+          unzip -q pip-xiaomi-unsigned.ipa -d /tmp/pip-verify
+          APP=$(ls -d /tmp/pip-verify/Payload/*.app)
+          echo "App: $APP"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :MinimumOSVersion" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :NSLocalNetworkUsageDescription" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :NSAppTransportSecurity:NSAllowsLocalNetworking" "$APP/Info.plist"
+          file "$APP/Pip"
+          if [ -e "$APP/_CodeSignature" ] || [ -e "$APP/embedded.mobileprovision" ]; then
+            echo "ERROR: unexpectedly signed"; exit 1
+          fi
+          echo "Unsigned check OK"
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: pip-xiaomi-unsigned
+          path: pip-xiaomi-unsigned.ipa
+          retention-days: 30

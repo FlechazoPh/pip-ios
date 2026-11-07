@@ -1,0 +1,8 @@
+build/
+*.ipa
+*.xcarchive
+DerivedData/
+.DS_Store
+# 逆向原件与解包不进仓库（只留规格文档）
+Pip.apk
+out/
