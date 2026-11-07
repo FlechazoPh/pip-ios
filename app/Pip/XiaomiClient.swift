@@ -21,19 +21,30 @@ enum PipError: LocalizedError {
 
 /// RemoteKey 枚举 ng1 到 keycode 的映射（REVERSE.md §3.2）。
 /// 注意：PLAY_PAUSE 与 OK 相同，都是 `enter` —— 照搬，不要“修正”。
-enum RemoteKey: String {
-    case up = "up"
-    case down = "down"
-    case left = "left"
-    case right = "right"
-    case ok = "enter"
-    case playPause = "enter"
-    case back = "back"
-    case home = "home"
-    case menu = "menu"
-    case volumeUp = "volumeup"
-    case volumeDown = "volumedown"
-    case power = "power"
+/// Swift 枚举的 raw value 必须唯一，所以不用 String raw value，
+/// 改用计算属性 keycode（ok 与 playPause 共用 "enter"）。
+enum RemoteKey {
+    case up, down, left, right
+    case ok, playPause
+    case back, home, menu
+    case volumeUp, volumeDown
+    case power
+
+    var keycode: String {
+        switch self {
+        case .up: return "up"
+        case .down: return "down"
+        case .left: return "left"
+        case .right: return "right"
+        case .ok, .playPause: return "enter"
+        case .back: return "back"
+        case .home: return "home"
+        case .menu: return "menu"
+        case .volumeUp: return "volumeup"
+        case .volumeDown: return "volumedown"
+        case .power: return "power"
+        }
+    }
 }
 
 actor XiaomiClient {
@@ -104,7 +115,7 @@ actor XiaomiClient {
                 guard await self.isAlive() else { throw PipError.notResponding }
                 self.connected = true
             }
-            _ = try await self.get("/controller?action=keyevent&keycode=\(key.rawValue)", timeout: 3.0)
+            _ = try await self.get("/controller?action=keyevent&keycode=\(key.keycode)", timeout: 3.0)
         }
     }
 
